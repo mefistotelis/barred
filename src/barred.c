@@ -517,7 +517,7 @@ static void drawScreen()
         redrawFlags = Draw_Nothing;
     }
     StanUpdate();
-    wmove(win_ct, (int) a, (int) b);
+    wmove(win_ct, (int) b, (int) a);
     wsimplcolor(win_ct, Colr_WorkArea);
 }
 
@@ -538,8 +538,7 @@ void shutdown()
     //delwin(win_ct);
     endwin();
     printf("\n   BArrEd ver 2.01\n");
-    printf("      Author:    Tomasz Lis\n");
-    printf("                            (c) Tomasz Lis 1997-2000\n");
+    printf("                by Tomasz Lis 1997-2015\n");
 }
 
 int keyCommand(int key)
