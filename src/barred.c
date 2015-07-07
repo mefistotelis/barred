@@ -20,6 +20,12 @@
 #include <ctype.h>
 #include <getopt.h>
 
+enum ModeFlags {
+    Mode_None = 0,
+    Mode_Help,
+    Mode_ArrEdit,
+};
+
 enum RedrawFlags {
     Draw_Nothing    = 0x00,
     Draw_Header     = 0x01,
@@ -41,7 +47,8 @@ enum SimpleColors {
 enum UserCommands {
     UCmd_None = 0,
     UCmd_Quit,
-    UCmd_Help,
+    UCmd_ModeHelp,
+    UCmd_ModeArrEd,
     UCmd_ColsWiden,
     UCmd_ColsShrink,
     UCmd_CopyLine,
@@ -59,6 +66,13 @@ enum UserCommands {
     UCmd_MovePgDn,
     UCmd_MoveHome,
     UCmd_MoveEnd,
+};
+
+struct HotKey {
+    int keycode;
+    int cmd;
+    char *key_text;
+    char *cmd_text;
 };
 
 /** Verbosity level; higher level prints more messages. */
@@ -89,11 +103,19 @@ int     P_ioresult;
 #define BadInputFormat   14
 #define EndOfFile        30
 
-int a; /*Pozycja w linii*/
-int b; /*Linia(na ekranie) w ktorej stoi kursor*/
-int O; /*Ilosc linii powyzej ekranu*/
+/** Cursor position - column within line. */
+int cur_col;
+/** Cursor position - line number (on screen). */
+int cur_row;
+/** Amount of lines above the screen. */
+int top_row;
 
-int C, J, K;
+int C, K;
+
+/**
+ * Editing mode, from Mode_* enums.
+ */
+unsigned char editMode;
 
 /** Jak bardzo trzeba zmienić zawartość ekranu(odświerzyć)
  0-  nic nie robić
@@ -107,7 +129,7 @@ int C, J, K;
  128-odświerzyć pasek menu(dolny)*/
 unsigned char redrawFlags;
 
-unsigned char Opcje;
+unsigned char drawOptions;
 /*1- Zamieniaj 0 na spację
  */
 long IVal;
@@ -171,6 +193,7 @@ void wsimplcolor(WINDOW *w, int c)
 
 void print_help(void)
 {
+    wsimplcolor(win_ct, Colr_WorkArea);
     wmove(win_ct, 0, 0);
     wprintw(win_ct, "\n     BArrEd                             (c) by Tomasz Lis\n\n");
     wprintw(win_ct, "This program allows to view and edit binary files which contain\n");
@@ -199,57 +222,65 @@ static void EKRAN(unsigned int chrcode, unsigned short chrarrtib, int pos_x, int
     wmove(win_ct, pos_y, pos_x) == -1 ? -1 : waddrawch(win_ct, chrcode);//|chrarrtib
 }
 
-void draw_footer_stdmenu(void)
+const struct HotKey hkeys_arredit[] = {
+    {KEY_F(1), UCmd_ModeHelp, "F1",  "Help"},
+    {KEY_F(2), UCmd_ModeHelp, "F2",  "Shrink"},
+    {KEY_F(3), UCmd_ModeHelp, "F3",  "Widen"},
+    {KEY_F(4), UCmd_ModeHelp, "F4",  "CpLine"},
+    {KEY_F(5), UCmd_ModeHelp, "F5",  "CpChar"},
+    {KEY_F(6), UCmd_ModeHelp, "F6",  "-Byte"},
+    {KEY_F(7), UCmd_ModeHelp, "F7",  "+Byte"},
+    {KEY_F(8), UCmd_ModeHelp, "F8",  "Search"},
+    {KEY_F(9), UCmd_ModeHelp, "\033\331","ASCII"},
+    {KEY_F(10),UCmd_ModeHelp, "F10", "Exit"},
+};
+
+void draw_footer_arredit(void)
 {
+    int num_hotkeys = sizeof(hkeys_arredit)/sizeof(struct HotKey);
+    int ikey;
+    wsimplcolor(win_ft, Colr_Default);
+    wclear(win_ft);
     wmove(win_ft, 0, 0);
+    int excess_space = GetMaxX;
+    for (ikey = 0; ikey < num_hotkeys; ikey++)
+    {
+        const struct HotKey *hk;
+        hk = &hkeys_arredit[ikey];
+        excess_space -= strlen(hk->key_text);
+        excess_space -= strlen(hk->cmd_text);
+    }
+    for (ikey = 0; ikey < num_hotkeys; ikey++)
+    {
+        const struct HotKey *hk;
+        hk = &hkeys_arredit[ikey];
+        wsimplcolor(win_ft, Colr_Default);
+        if ((hk->key_text[0] > 0) && (hk->key_text[0] < 32)) {
+            waddrawch(win_ft, hk->key_text[0]);
+            wprintw(win_ft, "%s",hk->key_text+1);
+        } else {
+            wprintw(win_ft, "%s",hk->key_text);
+        }
+        wsimplcolor(win_ft, Colr_HotKey);
+        wprintw(win_ft, "%s%*c\n", hk->cmd_text, excess_space*(ikey)/num_hotkeys - excess_space*(ikey-1)/num_hotkeys, ' ');
+    }
+}
+
+void draw_footer_help(void)
+{
     wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, "F1");
+    wprintw(win_ft, "                          ");
     wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "Help");
+    wprintw(win_ft, "--->  Press any key <---");
     wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, " F2");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "Shrink ");
-    wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, "F3");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "Widen ");
-    wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, "F4");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "CpLine");
-    wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, "F5");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "CpChar");
-    wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, "F6");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "-Byte");
-    wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, "F7");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "+Byte");
-    wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, "F8");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "Search");
-    wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, "\033\331");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "ASCII");
-    wsimplcolor(win_ft, Colr_Default);
-    wprintw(win_ft, " F10");
-    wsimplcolor(win_ft, Colr_HotKey);
-    wprintw(win_ft, "Exit");
-    wrefresh(win_ft);
+    wprintw(win_ft, "                              ");
 }
 
 void draw_header_statusbar(void)
 {
-    wmove(win_hd, 0, 0);
     wsimplcolor(win_hd, Colr_Header);
-    wprintw(win_hd, "%80c", ' ');
+    wclear(win_hd);
+    wbkgd(win_hd,COLOR_PAIR(3));
     wmove(win_hd, 0, 1);
     wprintw(win_hd, "BArrEd: %s", ifname);
     wmove(win_hd, 0, 68);
@@ -259,22 +290,29 @@ void draw_header_statusbar(void)
         wprintw(win_hd, "->");
     else
         wprintw(win_hd, "  ");
-    wrefresh(win_hd);
 }
 
-static void StanUpdate()
+void draw_header_help(void)
+{
+    wsimplcolor(win_hd, Colr_Header);
+    wclear(win_hd);
+    wmove(win_hd, 0, 1);
+    wprintw(win_hd, "Information regarding the Binary Arrays Editor tool");
+}
+
+void draw_header_status_update(void)
 {
     wsimplcolor(win_hd, Colr_Header);
     wmove(win_hd, 0, 36);
-    wprintw(win_hd, "Byte %6d", num_cols * (O + b - 2) + skip_bytes + a);
+    wprintw(win_hd, "Byte %6d", num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col);
     wprintw(win_hd, " ASCII ");
-    if (num_cols * (O + b - 2) + skip_bytes + a - 1 >= maxpos(ifile))
+    if (num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col - 1 >= maxpos(ifile))
     {
         wprintw(win_hd, "EOF         ");
         return;
     }
     char Y, Z;
-    fseek(ifile, num_cols * (O + b - 2) + skip_bytes + a - 2, 0);
+    fseek(ifile, num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col - 2, 0);
     fread(&Z, 1, 1, ifile);
     wprintw(win_hd, "%3d", Z);
     if (feof(ifile))
@@ -284,31 +322,31 @@ static void StanUpdate()
     wprintw(win_hd, " I2:%5d", C * 16 + Y);
 }
 
-static void printFileLine(NrLini)
-    unsigned char NrLini;
+void printFileLine(unsigned short row_idx)
 {
     wsimplcolor(win_ct, Colr_WorkArea);
-    if (fseek(ifile, (NrLini + O) * num_cols + skip_bytes - 1, 0) != 0)
+    if (fseek(ifile, (row_idx + top_row) * num_cols + skip_bytes - 1, 0) != 0)
         fseek(ifile, maxpos(ifile) - 1, 0);
-    for (J = 1; J <= GetMaxX; J++)
+    int col_idx;
+    for (col_idx = 0; col_idx < GetMaxX; col_idx++)
     {
-        if (J <= num_cols)
+        if (col_idx <= num_cols)
         {
             char X;
             if (feof(ifile))
                 X = '=';
             else
                 fread(&X, 1, 1, ifile);
-            if (X == '\0' && (Opcje & 1) > 0)
+            if (X == '\0' && (drawOptions & 1) > 0)
                 X = ' ';
-            EKRAN(X, 27, (int) J, NrLini + 1);
+            EKRAN(X, 27, col_idx, row_idx + 1);
         }
         else
-            EKRAN(32, 7, (int) J, NrLini + 1);
+            EKRAN(32, 7, col_idx, row_idx + 1);
     }
 }
 
-static void parseCmdOptions(int argc, char *argv[])
+void parseCmdOptions(int argc, char *argv[])
 {
     int c;
     int i;
@@ -423,10 +461,13 @@ static void parseCmdOptions(int argc, char *argv[])
     }
 }
 
-static bool initScreen(void)
+int dummyripinit(WINDOW *win, int columns)
+{ return 0; }
+
+bool initScreen(void)
 {
-    ripoffline(1,NULL);
-    ripoffline(-1,NULL);
+    ripoffline(1,dummyripinit);
+    ripoffline(-1,dummyripinit);
     if ((win_ct = initscr()) == NULL) {
         fprintf(stderr, "Error initialising ncurses.\n");
         return FALSE;
@@ -439,7 +480,7 @@ static bool initScreen(void)
 
     win_hd = newwin(        1, GetMaxX,         0, 0);
     //win_ct = newwin(GetMaxY-2, GetMaxX,         1, 0);
-    win_ft = newwin(        1, GetMaxX, GetMaxY-1, 0);
+    win_ft = newwin(        1, GetMaxX, GetMaxY+1, 0);
 
     init_pair(1,  COLOR_CYAN,  COLOR_BLUE);
     init_pair(2,  COLOR_BLACK, COLOR_CYAN);
@@ -448,11 +489,12 @@ static bool initScreen(void)
     raw();
     keypad(stdscr, TRUE);
 
-    O = 0;
-    a = 1;
-    b = 2;
+    top_row = 0;
+    cur_col = 1;
+    cur_row = 2;
+    editMode = Mode_ArrEdit;
     redrawFlags = Draw_Header|Draw_Footer|Draw_CntntAll;
-    Opcje = 1;
+    drawOptions = 1;
 
     return TRUE;
 }
@@ -476,9 +518,9 @@ static bool initInputFile(void)
     return TRUE;
 }
 
-static void drawScreen()
+void drawScreen()
 {
-    if ((redrawFlags > 0) & (!kbhit()))
+    if ((redrawFlags != 0) & (!kbhit()))
     {
         if ((redrawFlags & Draw_CntntMvDn) > 0)
         {
@@ -498,26 +540,65 @@ static void drawScreen()
             InsLine();
             WyswietlLinie(22);*/
         }
-        if ((redrawFlags & Draw_Header) > 0)
-            draw_header_statusbar();
+        if ((redrawFlags & Draw_Header) > 0) {
+            switch (editMode) {
+            case Mode_ArrEdit:
+                draw_header_statusbar();
+                break;
+            case Mode_Help:
+                draw_header_help();
+                break;
+            default:
+                break;
+            }
+        }
         if ((redrawFlags & Draw_CntntAll) > 0)
         {
-            for (IVal = 0; IVal < GetMaxY-2; IVal++)
-                printFileLine((int) IVal);
+            switch (editMode) {
+            case Mode_ArrEdit:
+                for (IVal = 0; IVal < GetMaxY-2; IVal++)
+                    printFileLine((int) IVal);
+                break;
+            case Mode_Help:
+                print_help();
+                break;
+            default:
+                break;
+            }
         }
         if ((redrawFlags & Draw_CntntCur) > 0)
-            printFileLine((int) (b - 2));
+            printFileLine((int) (cur_row - 2));
         if ((redrawFlags & Draw_CntntBlw) > 0)
         {
-            for (IVal = b - 2; IVal < GetMaxY-2; IVal++)
+            for (IVal = cur_row - 2; IVal < GetMaxY-2; IVal++)
                 printFileLine((int) IVal);
         }
-        if ((redrawFlags & Draw_Footer) > 0)
-            draw_footer_stdmenu();
+        if ((redrawFlags & Draw_Footer) > 0) {
+            switch (editMode) {
+            case Mode_ArrEdit:
+                draw_footer_arredit();
+                break;
+            case Mode_Help:
+                draw_footer_help();
+                break;
+            default:
+                break;
+            }
+            wrefresh(win_ft);
+        }
         redrawFlags = Draw_Nothing;
     }
-    StanUpdate();
-    wmove(win_ct, (int) b, (int) a);
+    switch (editMode) {
+    case Mode_ArrEdit:
+        draw_header_status_update();
+        break;
+    case Mode_Help:
+        break;
+    default:
+        break;
+    }
+    wrefresh(win_hd);
+    wmove(win_ct, cur_row, cur_col);
     wsimplcolor(win_ct, Colr_WorkArea);
 }
 
@@ -543,47 +624,65 @@ void shutdown()
 
 int keyCommand(int key)
 {
-    switch (key)
+    switch (editMode)
     {
-    case KEY_F(10):
-    case '\033': // ESC
-        return UCmd_Quit;
-    case KEY_F(1):
-        return UCmd_Help;
-    case KEY_F(3):
-        return UCmd_ColsWiden;
-    case KEY_F(2):
-        return UCmd_ColsShrink;
-    case KEY_F(4):
-        return UCmd_CopyLine;
-    case KEY_F(5):
-        return UCmd_CopyChar;
-    case KEY_F(6):
-        return UCmd_SkipStartInc;
-    case KEY_F(7):
-        return UCmd_SkipStartDec;
-    case KEY_F(8):
-        return UCmd_Search;
-    case KEY_ENTER:
-        return UCmd_EnterASCII;
-    case KEY_UP:
-        return UCmd_MoveUp;
-    case KEY_DOWN:
-        return UCmd_MoveDown;
-    case KEY_LEFT:
-        return UCmd_MoveLeft;
-    case KEY_RIGHT:
-        return UCmd_MoveRight;
-    case KEY_PPAGE:
-        return UCmd_MovePgUp;
-    case KEY_NPAGE:
-        return UCmd_MovePgDn;
-    case KEY_HOME:
-        return UCmd_MoveHome;
-    case KEY_END:
-        return UCmd_MoveEnd;
-    default:
-        break;
+    case Mode_ArrEdit:
+        switch (key)
+        {
+        case KEY_F(10):
+        case '\033': // ESC
+            return UCmd_Quit;
+        case KEY_F(1):
+            return UCmd_ModeHelp;
+        case KEY_F(3):
+            return UCmd_ColsWiden;
+        case KEY_F(2):
+            return UCmd_ColsShrink;
+        case KEY_F(4):
+            return UCmd_CopyLine;
+        case KEY_F(5):
+            return UCmd_CopyChar;
+        case KEY_F(6):
+            return UCmd_SkipStartInc;
+        case KEY_F(7):
+            return UCmd_SkipStartDec;
+        case KEY_F(8):
+            return UCmd_Search;
+        case KEY_ENTER:
+            return UCmd_EnterASCII;
+        case KEY_UP:
+            return UCmd_MoveUp;
+        case KEY_DOWN:
+            return UCmd_MoveDown;
+        case KEY_LEFT:
+            return UCmd_MoveLeft;
+        case KEY_RIGHT:
+            return UCmd_MoveRight;
+        case KEY_PPAGE:
+            return UCmd_MovePgUp;
+        case KEY_NPAGE:
+            return UCmd_MovePgDn;
+        case KEY_HOME:
+            return UCmd_MoveHome;
+        case KEY_END:
+            return UCmd_MoveEnd;
+        default:
+            break;
+        }
+        return UCmd_None;
+    case Mode_Help:
+        switch (key)
+        {
+        case KEY_F(10):
+            return UCmd_Quit;
+        case KEY_F(1):
+        case '\033': // ESC
+        case '\040': // Space
+            return UCmd_ModeArrEd;
+        default:
+            break;
+        }
+        return UCmd_None;
     }
     return UCmd_None;
 }
@@ -642,8 +741,7 @@ static void SRCHSTR()
         }
         while (X != (char) 13);
     }
-    _SETIO(fseek(ifile, num_cols * (O + b - 2) + skip_bytes + a - 1, 0) == 0, EndOfFile);
-    if (P_ioresult != 0)
+    if (fseek(ifile, num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col - 1, 0) != 0)
         return;
     wsimplcolor(win_ft, Colr_HotKey);
     wmove(win_ct, 1, (int) wherey);
@@ -656,19 +754,19 @@ static void SRCHSTR()
             memmove(NAM2, NAM2 + 1, sizeof(NAM2) - 1);
         if (strcmp(Nam1, NAM2))
             continue;
-        a = ftell(ifile) - skip_bytes - strlen(Nam1) + 2;
-        O = a / num_cols;
-        if (O < 21)
+        cur_col = ftell(ifile) - skip_bytes - strlen(Nam1) + 2;
+        top_row = cur_col / num_cols;
+        if (top_row < 21)
         {
-            b = O + 2;
-            O = 0;
+            cur_row = top_row + 2;
+            top_row = 0;
         }
         else
         {
-            O -= 20;
-            b = 22;
+            top_row -= 20;
+            cur_row = 22;
         }
-        a %= num_cols;
+        cur_col %= num_cols;
         return;
     }
 }
@@ -679,41 +777,30 @@ static void executeCommand(int cmd, int ch)
     {
     case UCmd_Quit:
         break;
-    case UCmd_Help:
+    case UCmd_ModeHelp:
+        editMode = Mode_Help;
         redrawFlags = Draw_CntntAll|Draw_Header|Draw_Footer;
-        wsimplcolor(win_hd, Colr_WorkArea);
-        wclear(win_ct);
-        wsimplcolor(win_ct, Colr_Header);
-        wprintw(win_hd, "Information regarding the Binary Arrays Editor tool                                           ");
-        wsimplcolor(win_ct, Colr_WorkArea);
-        print_help();
-        putchar('\n');
-        wsimplcolor(win_ft, Colr_Default);
-        wprintw(win_ft, "                          ");
-        wsimplcolor(win_ft, Colr_HotKey);
-        wprintw(win_ft, "--->  Press any key <---");
-        wsimplcolor(win_ft, Colr_Default);
-        wprintw(win_ft, "                              ");
-        wrefresh(win_ct);
-        wrefresh(win_hd);
-        getch();
+        break;
+    case UCmd_ModeArrEd:
+        editMode = Mode_ArrEdit;
+        redrawFlags = Draw_CntntAll|Draw_Header|Draw_Footer;
         break;
     case UCmd_ColsWiden:
         redrawFlags = Draw_CntntAll|Draw_Header;
         num_cols++;
-        if (O + b - 2 < a)
-            a += 2 - b - O;
+        if (top_row + cur_row - 2 < cur_col)
+            cur_col += 2 - cur_row - top_row;
         else
         {
-            IVal = (num_cols - 1) * (O + b - 2) + a;
-            b = IVal / num_cols - O + 2;
-            a = IVal % num_cols;
-            if (a > num_cols)
-                a = num_cols;
-            while (b < 2)
+            IVal = (num_cols - 1) * (top_row + cur_row - 2) + cur_col;
+            cur_row = IVal / num_cols - top_row + 2;
+            cur_col = IVal % num_cols;
+            if (cur_col > num_cols)
+                cur_col = num_cols;
+            while (cur_row < 2)
             {
-                O--;
-                b++;
+                top_row--;
+                cur_row++;
             }
         }
         break;
@@ -725,10 +812,10 @@ static void executeCommand(int cmd, int ch)
         }
         break;
     case UCmd_CopyLine:
-        if (((num_cols * (O + b - 2) + skip_bytes + a + num_cols - 1 < maxpos(ifile))))
+        if (((num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col + num_cols - 1 < maxpos(ifile))))
         {
             char Y, Z;
-            fseek(ifile, num_cols * (O + b - 2) + skip_bytes + a - 2, 0);
+            fseek(ifile, num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col - 2, 0);
             fread(&Y, 1, 1, ifile);
             IVal = 0;
             do
@@ -738,7 +825,7 @@ static void executeCommand(int cmd, int ch)
                 IVal++;
             }
             while (!((Z != Y) | (ftell(ifile) + num_cols + 1 > maxpos(ifile))));
-            if (IVal >= 24 - b)
+            if (IVal >= 24 - cur_row)
                 return;
             fseek(ifile, ftell(ifile) - 1, 0);
             fwrite(&Y, 1, 1, ifile);
@@ -746,7 +833,7 @@ static void executeCommand(int cmd, int ch)
         }
         break;
     case UCmd_CopyChar:
-        if (num_cols * (O + b - 2) + skip_bytes + a + num_cols < maxpos(ifile))
+        if (num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col + num_cols < maxpos(ifile))
         {
             long FORLIM;
             FORLIM = num_cols;
@@ -754,9 +841,9 @@ static void executeCommand(int cmd, int ch)
             {
                 char Y;
                 redrawFlags = Draw_CntntBlw;
-                fseek(ifile, num_cols * (O + b - 2) + skip_bytes + IVal - 2, 0);
+                fseek(ifile, num_cols * (top_row + cur_row - 2) + skip_bytes + IVal - 2, 0);
                 fread(&Y, 1, 1, ifile);
-                fseek(ifile, num_cols * (O + b - 1) + skip_bytes + IVal - 2, 0);
+                fseek(ifile, num_cols * (top_row + cur_row - 1) + skip_bytes + IVal - 2, 0);
                 fwrite(&Y, 1, 1, ifile);
             }
         }
@@ -766,21 +853,21 @@ static void executeCommand(int cmd, int ch)
         {
             redrawFlags = Draw_CntntAll;
             skip_bytes++;
-            if (a > 1)
-                a--;
+            if (cur_col > 1)
+                cur_col--;
             else
             {
-                if (b > 2)
+                if (cur_row > 2)
                 {
-                    b--;
-                    a = num_cols;
+                    cur_row--;
+                    cur_col = num_cols;
                 }
                 else
                 {
-                    if (O > 0)
+                    if (top_row > 0)
                     {
-                        O--;
-                        a = num_cols;
+                        top_row--;
+                        cur_col = num_cols;
                     }
                 }
             }
@@ -791,22 +878,22 @@ static void executeCommand(int cmd, int ch)
         {
             redrawFlags = Draw_CntntAll;
             skip_bytes--;
-            if (a < num_cols)
-                a++;
+            if (cur_col < num_cols)
+                cur_col++;
             else
             {
-                if (b < 24)
+                if (cur_row < 24)
                 {
-                    b++;
-                    a = 1;
+                    cur_row++;
+                    cur_col = 1;
                 }
                 else
                 {
-                    if (O * num_cols + skip_bytes < maxpos(ifile))
+                    if (top_row * num_cols + skip_bytes < maxpos(ifile))
                     {
                         redrawFlags = Draw_CntntAll;
-                        O++;
-                        a = 1;
+                        top_row++;
+                        cur_col = 1;
                     }
                 }
             }
@@ -826,7 +913,7 @@ static void executeCommand(int cmd, int ch)
         SRCHSTR();
         break;
     case UCmd_EnterASCII:
-        if ((num_cols * (O + b - 2) + skip_bytes + a <= maxpos(ifile)))
+        if ((num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col <= maxpos(ifile)))
         {
             redrawFlags = Draw_CntntCur|Draw_CntntMvDn|Draw_Header|Draw_Footer;
             char Y;
@@ -834,7 +921,7 @@ static void executeCommand(int cmd, int ch)
             wsimplcolor(win_ft, Colr_HotKey);
             wprintw(win_ct, "           ");
             wsimplcolor(win_ft, Colr_Default);
-            fseek(ifile, num_cols * (O + b - 2) + skip_bytes + a - 2, 0);
+            fseek(ifile, num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col - 2, 0);
             fread(&Y, 1, 1, ifile);
             wprintw(win_ct, "%3d", Y);
             wsimplcolor(win_ft, Colr_HotKey);
@@ -843,7 +930,7 @@ static void executeCommand(int cmd, int ch)
             wprintw(win_ct, " ESC");
             wmove(win_ct, 20, 25);
             wprintw(win_ct, "   ");
-            wmove(win_ct, (int) a, (int) b);
+            wmove(win_ct, (int) cur_col, (int) cur_row);
             putchar(Y);
             wmove(win_ct, 20, 25);
             _SETIO(scanf("%ld", &IVal) == 1, (feof(stdin) != 0) ? EndOfFile : BadInputFormat);
@@ -857,97 +944,97 @@ static void executeCommand(int cmd, int ch)
         }
         break;
     case UCmd_EnterType:
-        fseek(ifile, num_cols * (O + b - 2) + skip_bytes + a - 2, 0);
+        fseek(ifile, num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col - 2, 0);
         fwrite(&ch, 1, 1, ifile);
         putchar(ch);
         break;
     case UCmd_MoveUp:
-        if (b > 2)
-            b--;
+        if (cur_row > 2)
+            cur_row--;
         else
         {
-            if (O > 0)
+            if (top_row > 0)
             {
                 redrawFlags = Draw_CntntMvDn;
-                O--;
+                top_row--;
             }
         }
         break;
     case UCmd_MoveDown:
-        if (b < 24)
-            b++;
+        if (cur_row < 24)
+            cur_row++;
         else
         {
-            if ((O + 1) * num_cols + skip_bytes < maxpos(ifile))
+            if ((top_row + 1) * num_cols + skip_bytes < maxpos(ifile))
             {
                 redrawFlags = Draw_CntntMvUp;
-                O++;
+                top_row++;
             }
         }
         break;
     case UCmd_MoveLeft:
-        if (a > 1)
-            a--;
+        if (cur_col > 1)
+            cur_col--;
         else
         {
-            if (b > 2)
+            if (cur_row > 2)
             {
-                b--;
-                a = num_cols;
+                cur_row--;
+                cur_col = num_cols;
             }
             else
             {
-                if (O > 0)
+                if (top_row > 0)
                 {
                     redrawFlags = Draw_CntntMvDn;
-                    O--;
-                    a = num_cols;
+                    top_row--;
+                    cur_col = num_cols;
                 }
             }
         }
         break;
     case UCmd_MoveRight:
-        if (a < num_cols)
-            a++;
+        if (cur_col < num_cols)
+            cur_col++;
         else
         {
-            if (b < 24)
+            if (cur_row < 24)
             {
-                b++;
-                a = 1;
+                cur_row++;
+                cur_col = 1;
             }
             else
             {
-                if (O * num_cols + skip_bytes < maxpos(ifile))
+                if (top_row * num_cols + skip_bytes < maxpos(ifile))
                 {
                     redrawFlags = Draw_CntntMvUp;
-                    O++;
-                    a = 1;
+                    top_row++;
+                    cur_col = 1;
                 }
             }
         }
         break;
     case UCmd_MovePgUp:
         redrawFlags = Draw_CntntAll;
-        if (O > 23)
-            O -= 22;
+        if (top_row > 23)
+            top_row -= 22;
         else
-            O = 0;
+            top_row = 0;
         break;
     case UCmd_MovePgDn:
         redrawFlags = Draw_CntntAll;
-        if ((O + 23) * num_cols + skip_bytes < maxpos(ifile))
-            O += 22;
+        if ((top_row + 23) * num_cols + skip_bytes < maxpos(ifile))
+            top_row += 22;
         else
-            O = (maxpos(ifile) - skip_bytes) / num_cols;
+            top_row = (maxpos(ifile) - skip_bytes) / num_cols;
         break;
     case UCmd_MoveHome:
         redrawFlags = Draw_CntntAll;
-        O = 0;
+        top_row = 0;
         break;
     case UCmd_MoveEnd:
         redrawFlags = Draw_CntntAll;
-        O = (maxpos(ifile) - skip_bytes) / num_cols;
+        top_row = (maxpos(ifile) - skip_bytes) / num_cols;
         break;
     case UCmd_None:
     default:
