@@ -748,19 +748,14 @@ int keyCommand(int key)
     return UCmd_None;
 }
 
-static void SRCHSTR()
+void cmdSearchString()
 {
     char NAM2[256];
     char X;
 
     *NAM2 = '\0';
-    fputs(Nam1, stdout);
+    wprintw(win_ft, "%s", Nam1);
     X = toupper(getch());
-    if ((X == '\0') & kbhit())
-    {
-        X = getch();
-        return;
-    }
     if (X == '\033')
     {
         X = '\001';
@@ -776,24 +771,16 @@ static void SRCHSTR()
                 {
                     Nam1[strlen(Nam1)] = '\0';
                     wmove(win_ft, (wherex - 1), wherey);
-                    putchar(' ');
+                    waddch(win_ft,X);
                     wmove(win_ft, (wherex - 1), wherey);
                 }
-            }
-            else
+            } else
+            if (strlen(Nam1) < 42)
             {
-                if (strlen(Nam1) < 42)
-                {
-                    putchar(X);
-                    sprintf(Nam1 + strlen(Nam1), "%c", X);
-                }
+                waddch(win_ft,X);
+                sprintf(Nam1 + strlen(Nam1), "%c", X);
             }
             X = toupper(getch());
-            if ((X == '\0') & kbhit())
-            {
-                X = getch();
-                return;
-            }
             if (X == '\033')
             {
                 X = '\001';
@@ -806,7 +793,7 @@ static void SRCHSTR()
         return;
     wsimplcolor(win_ft, Colr_HotKey);
     wmove(win_ct, 1, wherey);
-    wprintw(win_ft, "   Wyszukiwanie . . . ");
+    wprintw(win_ft, "   Searching . . . ");
     while (!feof(ifile))
     {
         fread(&X, 1, 1, ifile);
@@ -951,13 +938,15 @@ static void executeCommand(int cmd, int ch)
         break;
     case UCmd_Search:
         redrawFlags |= Draw_CntntAll|Draw_Header|Draw_Footer;
+        wsimplclear(win_ft, Colr_HotKey);
         wmove(win_ft, 0, 25);
         wsimplcolor(win_ft, Colr_HotKey);
         wprintw(win_ft, "Search for string:");
         wsimplcolor(win_ft, Colr_Input);
         wprintw(win_ft,"[%40c]",' ');
         wmove(win_ft, 0, 25);
-        SRCHSTR();
+        wrefresh(win_ft);
+        cmdSearchString();
         break;
     case UCmd_EnterASCII: {
         unsigned char echr;
@@ -965,7 +954,7 @@ static void executeCommand(int cmd, int ch)
             break;
         if (fread(&echr, 1, 1, ifile) != 1)
             break;
-        redrawFlags |= Draw_CntntCur|Draw_CntntMvDn|Draw_Header|Draw_Footer;
+        redrawFlags |= Draw_CntntCur|Draw_Header|Draw_Footer;
         wsimplclear(win_ft, Colr_HotKey);
         wmove(win_ft, 0, 11);
         wsimplcolor(win_ft, Colr_Input);
@@ -978,15 +967,19 @@ static void executeCommand(int cmd, int ch)
         wprintw(win_ft, "   ");
         wmove(win_ft, cur_col, cur_row);
         wmove(win_ft, 0, 20);
+        echo();
         wrefresh(win_ft);
-        if (wscanw(win_ft, "%ld%*[^\n]", &IVal) != 1)
+        if (wscanw(win_ft, "%ld%*[^\n]", &IVal) != 1) {
+            noecho();
             break;
+        }
+        noecho();
         echr = (char) IVal;
-        fseek(ifile, ftell(ifile) - 1, SEEK_SET);
-        fwrite(&echr, 1, 1, ifile);
+        if (fseek(ifile, ftell(ifile) - 1, SEEK_SET) == 0)
+            fwrite(&echr, 1, 1, ifile);
         };break;
     case UCmd_EnterType:
-        if (fseek(ifile, num_cols * (top_row + cur_row - 2) + skip_bytes + cur_col - 2, SEEK_SET) == 0)
+        if (fseek(ifile, file_pos_at_screen_pos(cur_row,cur_col), SEEK_SET) == 0)
             fwrite(&ch, 1, 1, ifile);
         redrawFlags |= Draw_CntntCur;
         break;
@@ -1003,7 +996,7 @@ static void executeCommand(int cmd, int ch)
         if (cur_row < GetMaxY-1) {
             cur_row++;
         } else
-        if ((top_row + 1) * num_cols + skip_bytes < maxpos(ifile)) {
+        if (file_pos_at_screen_pos(1,0) < maxpos(ifile)) {
             redrawFlags |= Draw_CntntMvUp;
             top_row++;
         }
@@ -1030,7 +1023,7 @@ static void executeCommand(int cmd, int ch)
             cur_row++;
             cur_col = 0;
         } else
-        if (top_row * num_cols + skip_bytes < maxpos(ifile)) {
+        if (file_pos_at_screen_pos(0,0) < maxpos(ifile)) {
             redrawFlags |= Draw_CntntMvUp;
             top_row++;
             cur_col = 0;
