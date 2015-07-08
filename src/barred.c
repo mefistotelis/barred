@@ -582,21 +582,19 @@ void drawScreen()
         case Mode_ArrEdit:
             if ((redrawFlags & Draw_CntntMvDn) != 0)
             {
-                redrawFlags |= Draw_CntntAll;
-                /*wmove(win_ct, 1, 24);
-                DelLine();
-                wmove(win_ct, 1, 2);
-                InsLine();
-                printFileLine(0);*/
+                // Insert line at top and draw only that new line
+                wmove(win_ct, 0, 0);
+                winsdelln(win_ct, 1);
+                wmove(win_ct, 0, 0);
+                printFileLine(0);
             }
             if ((redrawFlags & Draw_CntntMvUp) != 0)
             {
-                redrawFlags |= Draw_CntntAll;
-                /*wmove(win_ct, 1, 2);
-                DelLine();
-                wmove(win_ct, 1, 24);
-                InsLine();
-                printFileLine(GetMaxY-1);*/
+                // Delete top line and redraw bottom line only
+                wmove(win_ct, 0, 0);
+                winsdelln(win_ct, -1);
+                wmove(win_ct, GetMaxY-1, 0);
+                printFileLine(GetMaxY-1);
             }
             if ((redrawFlags & Draw_CntntCur) != 0) {
                 printFileLine(cur_row);
