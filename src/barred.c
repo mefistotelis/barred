@@ -20,6 +20,15 @@
 #include <ctype.h>
 #include <getopt.h>
 
+#include "barred_version.h"
+
+#define KEY_USR_ESCAPE '\033'
+#define KEY_USR_SPACE '\040'
+#define KEY_USR_ENTER '\015'
+#define KEY_USR_BACKSPC '\010'
+
+#define SEARCH_STR_MAX_LEN 42
+
 enum ModeStates {
     Mode_None = 0,
     Mode_Help,
@@ -30,6 +39,10 @@ enum SubModeAEStates {
     SMdAE_Normal = 0,
     SMdAE_Search,
     SMdAE_EnterCode,
+};
+
+enum SubModeHlStates {
+    SMdHl_Normal = 0,
 };
 
 enum RedrawFlags {
@@ -107,15 +120,6 @@ int num_cols;
 /** Amount of bytes skipped at the beginning of the file. */
 int skip_bytes;
 
-int     P_ioresult;
-#define _SETIO(cond,ior)          (P_ioresult = (cond) ? 0 : (ior))
-
-#define FileNotFound     10
-#define FileNotOpen      13
-#define FileWriteError   38
-#define BadInputFormat   14
-#define EndOfFile        30
-
 /** Cursor position - column within line. */
 int cur_col;
 /** Cursor position - line number (on screen). */
@@ -132,30 +136,28 @@ int C, K;
  */
 unsigned char editMode;
 
-/** Jak bardzo trzeba zmienić zawartość ekranu(odświerzyć)
- 0-  nic nie robić
- 1-  odświerzyć pasek stanu(górny)
- 2-  odświerzyć cały wyświetlony plik
- 4-  nieużyte
- 8-  aktualną linię
- 16- aktualną linię i poniżej
- 32- linię pierwszą, resztę przesuń w dół
- 64- linię ostatnią, resztę przesuń w górę
- 128-odświerzyć pasek menu(dolny)*/
+/**
+ * Editing sub-mode, from SMd*_* enums.
+ * Which enumeration contain correct values, depends on editMode.
+ */
+unsigned char subMode;
+
+/** How much of the screen needs redrawing.
+ * Stores flags from Draw_* enums.
+ */
 unsigned char redrawFlags;
 
-unsigned char drawOptions;
-/*1- Zamieniaj 0 na spację
+/**
+ * Drawing options, flags from DOpt_* enums.
  */
+unsigned char drawOptions;
+
 long IVal;
 
 char Nam1[256];
 
 int GetMaxX = 80;
 int GetMaxY = 40;
-
-//REMOVE
-int wherex = 0, wherey = 0;
 
 int kbhit(void)
 {
@@ -244,7 +246,7 @@ void print_help(void)
     wsimplcolor(win_ct, Colr_WorkArea);
     wsimplclear(win_ct, Colr_WorkArea);
     wmove(win_ct, 0, 0);
-    wprintw(win_ct, "\n     BArrEd                             (c) by Tomasz Lis\n\n");
+    wprintw(win_ct, "\n     %s (%s)  by Tomasz Lis\n\n",FILE_DESCRIPTION,INTERNAL_NAME);
     wprintw(win_ct, "This program allows to view and edit binary files which contain\n");
     wprintw(win_ct, "array of constant-width records, like databases used in games.\n\n");
     wprintw(win_ct, "  Usage:\n");
@@ -287,7 +289,7 @@ const struct HotKey hkeys_arredit[] = {
 
 const struct HotKey hkeys_help[] = {
     {KEY_F(1), UCmd_ModeArrEd,    "F1",  "Back"},
-    {'\033',   UCmd_ModeArrEd,    "Esc", "Back"},
+    {KEY_USR_ESCAPE,   UCmd_ModeArrEd,    "Esc", "Back"},
     {KEY_F(10),UCmd_Quit,         "F10", "Exit"},
 };
 
@@ -328,7 +330,7 @@ void draw_header_statusbar(void)
     wsimplcolor(win_hd, Colr_Header);
     wsimplclear(win_hd, Colr_Header);
     wmove(win_hd, 0, 1);
-    wprintw(win_hd, "BArrEd: %s", ifname);
+    wprintw(win_hd, "%s: %s", INTERNAL_NAME, ifname);
     wmove(win_hd, 0, 68);
     wprintw(win_hd, "%12d ch/ln", num_cols);
     wmove(win_hd, 0, 78);
@@ -343,7 +345,7 @@ void draw_header_help(void)
     wsimplcolor(win_hd, Colr_Header);
     wsimplclear(win_hd, Colr_Header);
     wmove(win_hd, 0, 1);
-    wprintw(win_hd, "Information regarding the Binary Arrays Editor tool");
+    wprintw(win_hd, "Information regarding the %s tool",FILE_DESCRIPTION);
 }
 
 void draw_header_status_update(void)
@@ -391,7 +393,7 @@ void printFileLine(unsigned short row_idx)
                 outchr = ' ';
         } else {
             outchr = ' ';
-            colr = Colr_Default;
+            colr = Colr_Input;
         }
         EKRAN(outchr, colr, col_idx, row_idx);
     }
@@ -545,6 +547,7 @@ bool initScreen(void)
     cur_col = 0;
     cur_row = 0;
     editMode = Mode_ArrEdit;
+    subMode = SMdAE_Normal;
     redrawFlags = Draw_Header|Draw_Footer|Draw_CntntAll;
     drawOptions = DOpt_NullCharAsSpace;
 
@@ -554,7 +557,7 @@ bool initScreen(void)
 static bool initInputFile(void)
 {
     wmove(win_ct, 0, 0);
-    wprintw(win_ct, "BArrEd initial test . . .\n");
+    wprintw(win_ct, "%s initial test . . .\n",INTERNAL_NAME);
     wrefresh(win_ct);
     ifile = fopen(ifname, "r+b");
     if (ifile == NULL)
@@ -570,7 +573,7 @@ static bool initInputFile(void)
     return TRUE;
 }
 
-void drawScreen()
+void drawScreen(void)
 {
     if ((redrawFlags != Draw_Nothing) & (!kbhit()))
     {
@@ -661,7 +664,7 @@ void drawScreen()
     wsimplcolor(win_ct, Colr_WorkArea);
 }
 
-void shutdown()
+void shutdown(void)
 {
     if (ifile != NULL)
         fclose(ifile);
@@ -669,7 +672,7 @@ void shutdown()
     wsimplcolor(win_hd, Colr_Default);
     wsimplcolor(win_ct, Colr_Default);
     wsimplcolor(win_ft, Colr_Default);
-    wclear(win_ft);
+    wsimplclear(win_ft, Colr_Default);
     wrefresh(win_ft);
     wrefresh(win_hd);
     wrefresh(win_ct);
@@ -677,38 +680,49 @@ void shutdown()
     delwin(win_ft);
     //delwin(win_ct);
     endwin();
-    printf("\n   BArrEd ver 2.01\n");
+    printf("\n   %s ver %s\n",INTERNAL_NAME,VER_STRING);
     printf("                by Tomasz Lis 1997-2015\n");
 }
 
 int keyCommand(int key)
 {
+    // Recognize hotkeys from array data.
+    const struct HotKey * hkeys;
+    int num_hotkeys;
+    switch (editMode)
+    {
+    case Mode_ArrEdit:
+        hkeys = hkeys_arredit;
+        num_hotkeys = sizeof(hkeys_arredit)/sizeof(struct HotKey);
+        break;
+    case Mode_Help:
+        hkeys = hkeys_help;
+        num_hotkeys = sizeof(hkeys_help)/sizeof(struct HotKey);
+        break;
+    default:
+        hkeys = hkeys_help;
+        num_hotkeys = 0;
+        break;
+    }
+    int ikey;
+    for (ikey = 0; ikey < num_hotkeys; ikey++)
+    {
+        const struct HotKey *hk;
+        hk = &hkeys[ikey];
+        if (hk->keycode == key)
+            return hk->cmd;
+    }
+    // Recognize additional per-mode keys
     switch (editMode)
     {
     case Mode_ArrEdit:
         switch (key)
         {
         case KEY_F(10):
-        case '\033': // ESC
+        case KEY_USR_ESCAPE:
             return UCmd_Quit;
-        case KEY_F(1):
-            return UCmd_ModeHelp;
-        case KEY_F(3):
-            return UCmd_ColsWiden;
-        case KEY_F(2):
-            return UCmd_ColsShrink;
-        case KEY_F(4):
-            return UCmd_CopyLine;
-        case KEY_F(5):
-            return UCmd_CopyChar;
-        case KEY_F(6):
-            return UCmd_SkipStartInc;
-        case KEY_F(7):
-            return UCmd_SkipStartDec;
-        case KEY_F(8):
-            return UCmd_Search;
         case KEY_ENTER:
-        case '\015': // Enter
+        case KEY_USR_ENTER:
             return UCmd_EnterASCII;
         case KEY_UP:
             return UCmd_MoveUp;
@@ -729,6 +743,9 @@ int keyCommand(int key)
         default:
             break;
         }
+        // Normal 8-bit keys may be interpreted as typing within the file
+        if ((key >= 1) && (key <= 255))
+            return UCmd_EnterType;
         return UCmd_None;
     case Mode_Help:
         switch (key)
@@ -736,8 +753,8 @@ int keyCommand(int key)
         case KEY_F(10):
             return UCmd_Quit;
         case KEY_F(1):
-        case '\033': // ESC
-        case '\040': // Space
+        case KEY_USR_ESCAPE:
+        case KEY_USR_SPACE:
             return UCmd_ModeArrEd;
         default:
             break;
@@ -747,78 +764,79 @@ int keyCommand(int key)
     return UCmd_None;
 }
 
-void cmdSearchString()
+void cmdSearchString(void)
 {
-    char NAM2[256];
     char X;
+    int startx, starty;
 
-    *NAM2 = '\0';
+    getyx(win_ft, starty, startx);
+    startx += 1;
+
+    wprintw(win_ft,"[%*c]",SEARCH_STR_MAX_LEN,' ');
+    wmove(win_ft, starty, startx);
+
     wprintw(win_ft, "%s", Nam1);
-    X = toupper(getch());
-    if (X == '\033')
+    while (1)
     {
-        X = '\001';
-        return;
-    }
-    if (X != '\015')
-    {
-        do
-        {
-            if (X == 8)
-            {
-                if (*Nam1 != '\0')
-                {
-                    Nam1[strlen(Nam1)] = '\0';
-                    wmove(win_ft, (wherex - 1), wherey);
-                    waddch(win_ft,X);
-                    wmove(win_ft, (wherex - 1), wherey);
-                }
-            } else
-            if (strlen(Nam1) < 42)
-            {
-                waddch(win_ft,X);
-                sprintf(Nam1 + strlen(Nam1), "%c", X);
-            }
-            X = toupper(getch());
-            if (X == '\033')
-            {
-                X = '\001';
-                return;
-            }
+        wrefresh(win_ft);
+        X = getch();
+        if (X == KEY_USR_ESCAPE) {
+            return;
         }
-        while (X != (char) 13);
+        if ((X == KEY_ENTER) || (X == KEY_USR_ENTER)) {
+            break;
+        }
+        if ((X == KEY_BACKSPACE) || (X == KEY_USR_BACKSPC))
+        {
+            if (Nam1[0] != '\0')
+            {
+                Nam1[strlen(Nam1)-1] = '\0';
+                int wherex, wherey;
+                getyx(win_ft, wherey, wherex);
+                wmove(win_ft, wherey, wherex-1);
+                waddch(win_ft,' ');
+                wmove(win_ft, wherey, wherex-1);
+            }
+        } else
+        if (strlen(Nam1) < SEARCH_STR_MAX_LEN)
+        {
+            waddch(win_ft,X);
+            sprintf(Nam1 + strlen(Nam1), "%c", X);
+        }
     }
+
+    char NAM2[256];
+    NAM2[0] = '\0';
     if (fseek(ifile, file_pos_at_screen_pos(cur_row, cur_col), SEEK_SET) != 0)
         return;
     wsimplcolor(win_ft, Colr_HotKey);
-    wmove(win_ct, 1, wherey);
+    wmove(win_ct, starty, 0);
     wprintw(win_ft, "   Searching . . . ");
     while (!feof(ifile))
     {
         fread(&X, 1, 1, ifile);
-        sprintf(NAM2 + strlen(NAM2), "%c", toupper(X));
+        sprintf(NAM2 + strlen(NAM2), "%c", X);
         while (strlen(NAM2) > strlen(Nam1))
             memmove(NAM2, NAM2 + 1, sizeof(NAM2) - 1);
-        if (strcmp(Nam1, NAM2))
+        if (strcmp(Nam1, NAM2) != 0)
             continue;
-        cur_col = ftell(ifile) - skip_bytes - strlen(Nam1) + 2;
-        top_row = cur_col / num_cols;
-        if (top_row < 21)
+        long long file_pos = ftell(ifile) - skip_bytes - strlen(Nam1);
+        top_row = file_pos / num_cols;
+        if (top_row < GetMaxY-1)
         {
-            cur_row = top_row + 2;
+            cur_row = top_row;
             top_row = 0;
-        }
-        else
+        } else
         {
-            top_row -= 20;
-            cur_row = 22;
+            top_row -= GetMaxY-1;
+            cur_row = GetMaxY-1;
         }
-        cur_col %= num_cols;
+        cur_col = file_pos % num_cols;
         return;
     }
 }
 
-static void executeCommand(int cmd, int ch)
+void executeCommand(int cmd, int ch)
 {
     switch (cmd)
     {
@@ -826,10 +844,12 @@ static void executeCommand(int cmd, int ch)
         break;
     case UCmd_ModeHelp:
         editMode = Mode_Help;
+        subMode = SMdHl_Normal;
         redrawFlags |= Draw_CntntAll|Draw_Header|Draw_Footer;
         break;
     case UCmd_ModeArrEd:
         editMode = Mode_ArrEdit;
+        subMode = SMdAE_Normal;
         redrawFlags |= Draw_CntntAll|Draw_Header|Draw_Footer;
         break;
     case UCmd_ColsWiden:
@@ -937,15 +957,14 @@ static void executeCommand(int cmd, int ch)
         break;
     case UCmd_Search:
         redrawFlags |= Draw_CntntAll|Draw_Header|Draw_Footer;
+        subMode = SMdAE_Search;
         wsimplclear(win_ft, Colr_HotKey);
         wmove(win_ft, 0, 25);
         wsimplcolor(win_ft, Colr_HotKey);
         wprintw(win_ft, "Search for string:");
         wsimplcolor(win_ft, Colr_Input);
-        wprintw(win_ft,"[%40c]",' ');
-        wmove(win_ft, 0, 25);
-        wrefresh(win_ft);
         cmdSearchString();
+        subMode = SMdAE_Normal;
         break;
     case UCmd_EnterASCII: {
         unsigned char echr;
@@ -954,6 +973,7 @@ static void executeCommand(int cmd, int ch)
         if (fread(&echr, 1, 1, ifile) != 1)
             break;
         redrawFlags |= Draw_CntntCur|Draw_Header|Draw_Footer;
+        subMode = SMdAE_EnterCode;
         wsimplclear(win_ft, Colr_HotKey);
         wmove(win_ft, 0, 11);
         wsimplcolor(win_ft, Colr_Input);
@@ -974,6 +994,7 @@ static void executeCommand(int cmd, int ch)
         }
         noecho();
         echr = (char) IVal;
+        subMode = SMdAE_Normal;
         if (fseek(ifile, ftell(ifile) - 1, SEEK_SET) == 0)
             fwrite(&echr, 1, 1, ifile);
         };break;

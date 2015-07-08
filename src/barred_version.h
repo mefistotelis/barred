@@ -20,19 +20,19 @@
 #define BARRED_VERSION_H
 
 /* VERSION DEFINITIONS */
-#define VER_STRING	"0.1.0.0"
-#define VER_MAJOR	0
-#define VER_MINOR	1
-#define VER_RELEASE	0
+#define VER_STRING	"2.0.2.0"
+#define VER_MAJOR	2
+#define VER_MINOR	0
+#define VER_RELEASE	2
 #define VER_BUILD	0
-#define COMPANY_NAME	""
-#define FILE_VERSION	""
+#define COMPANY_NAME	"Open Source"
+#define FILE_VERSION	VER_STRING
 #define FILE_DESCRIPTION	"Binary Arrays Editor"
-#define INTERNAL_NAME	""
-#define LEGAL_COPYRIGHT	""
-#define LEGAL_TRADEMARKS	""
-#define ORIGINAL_FILENAME	""
+#define INTERNAL_NAME	"BArrEd"
+#define LEGAL_COPYRIGHT	"Tomasz Lis"
+#define LEGAL_TRADEMARKS	"Open Source"
+#define ORIGINAL_FILENAME	INTERNAL_NAME".exe"
 #define PRODUCT_NAME	"Binary tools"
-#define PRODUCT_VERSION	""
+#define PRODUCT_VERSION	VER_STRING
 
 #endif
