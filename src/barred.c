@@ -123,7 +123,7 @@ int cur_row;
 /** Amount of lines above the screen. */
 int top_row;
 
-#define file_pos_at_screen_pos(scr_row, scr_col) ((top_row + scr_row) * num_cols + skip_bytes + scr_col)
+#define file_pos_at_screen_pos(scr_row, scr_col) (((long long)top_row + scr_row) * num_cols + skip_bytes + scr_col)
 
 int C, K;
 
@@ -350,22 +350,23 @@ void draw_header_status_update(void)
 {
     wsimplcolor(win_hd, Colr_Header);
     wmove(win_hd, 0, 36);
-    wprintw(win_hd, "Byte %6d", file_pos_at_screen_pos(cur_row, cur_col));
+    wprintw(win_hd, "Byte %6u", file_pos_at_screen_pos(cur_row, cur_col));
     wprintw(win_hd, " ASCII ");
     if (file_pos_at_screen_pos(cur_row, cur_col) >= maxpos(ifile))
     {
         wprintw(win_hd, "EOF         ");
         return;
     }
-    char Y, Z;
+    unsigned char nxchr, curchr;
     fseek(ifile, file_pos_at_screen_pos(cur_row, cur_col), SEEK_SET);
-    fread(&Z, 1, 1, ifile);
-    wprintw(win_hd, "%3d", Z);
+    fread(&curchr, 1, 1, ifile);
+    wprintw(win_hd, "%3u", (unsigned int)curchr);
     if (feof(ifile))
         return;
-    fread(&Y, 1, 1, ifile);
-    C = Z * 16;
-    wprintw(win_hd, " I2:%5d", C * 16 + Y);
+    fread(&nxchr, 1, 1, ifile);
+    unsigned int val_ui16;
+    val_ui16 = ((unsigned int)curchr << 8) + nxchr;
+    wprintw(win_hd, " I2:%5u", val_ui16);
 }
 
 void printFileLine(unsigned short row_idx)
@@ -376,7 +377,7 @@ void printFileLine(unsigned short row_idx)
     int col_idx;
     for (col_idx = 0; col_idx < GetMaxX; col_idx++)
     {
-        char outchr;
+        unsigned char outchr;
         int colr;
         if (col_idx < num_cols)
         {
