@@ -126,8 +126,12 @@ int cur_col;
 int cur_row;
 /** Amount of lines above the screen. */
 int top_row;
+/** Amount of columns left to the screen. */
+int left_col;
 
-#define file_pos_at_screen_pos(scr_row, scr_col) (((long long)top_row + scr_row) * num_cols + skip_bytes + scr_col)
+#define file_pos_at_screen_pos(scr_row, scr_col) (((long long)top_row + scr_row) * num_cols + skip_bytes + left_col + scr_col)
+#define screen_row_at_file_pos(file_pos) ((((long long)file_pos - skip_bytes) / num_cols) - top_row)
+#define screen_col_at_file_pos(file_pos) ((((long long)file_pos - skip_bytes) % num_cols) - left_col)
 
 int C, K;
 
@@ -175,11 +179,11 @@ int kbhit(void)
     return result;
 }
 
-unsigned long maxpos(FILE * f)
+long long maxpos(FILE * f)
 {
     fseek(f, 0, SEEK_END);
-    unsigned long ppos = ftell(f);
-    unsigned long len = (unsigned long)ftell(f);
+    long long ppos = ftell(f);
+    long long len = ftell(f);
     fseek(f, ppos, SEEK_SET);
     return len;
 }
@@ -331,10 +335,10 @@ void draw_header_statusbar(void)
     wsimplclear(win_hd, Colr_Header);
     wmove(win_hd, 0, 1);
     wprintw(win_hd, "%s: %s", INTERNAL_NAME, ifname);
-    wmove(win_hd, 0, 68);
-    wprintw(win_hd, "%12d ch/ln", num_cols);
-    wmove(win_hd, 0, 78);
-    if (num_cols > 80)
+    wmove(win_hd, 0, GetMaxX-14);
+    wprintw(win_hd, "%6d ch/ln", num_cols);
+    wmove(win_hd, 0, GetMaxX-2);
+    if (num_cols > GetMaxX)
         wprintw(win_hd, "->");
     else
         wprintw(win_hd, "  ");
@@ -354,21 +358,45 @@ void draw_header_status_update(void)
     wmove(win_hd, 0, 36);
     wprintw(win_hd, "Byte %6u", file_pos_at_screen_pos(cur_row, cur_col));
     wprintw(win_hd, " ASCII ");
-    if (file_pos_at_screen_pos(cur_row, cur_col) >= maxpos(ifile))
-    {
+    if (fseek(ifile, file_pos_at_screen_pos(cur_row, cur_col), SEEK_SET) != 0) {
         wprintw(win_hd, "EOF         ");
         return;
     }
     unsigned char nxchr, curchr;
-    fseek(ifile, file_pos_at_screen_pos(cur_row, cur_col), SEEK_SET);
     fread(&curchr, 1, 1, ifile);
     wprintw(win_hd, "%3u", (unsigned int)curchr);
     if (feof(ifile))
         return;
     fread(&nxchr, 1, 1, ifile);
-    unsigned int val_ui16;
-    val_ui16 = ((unsigned int)curchr << 8) + nxchr;
-    wprintw(win_hd, " I2:%5u", val_ui16);
+    unsigned int val_ui;
+    val_ui = ((unsigned int)curchr << 8) + nxchr;
+    wprintw(win_hd, " UI16be:%5u", val_ui);
+    val_ui = ((unsigned int)nxchr << 8) + curchr;
+    wprintw(win_hd, " UI16le:%5u", val_ui);
+}
+
+/** Move cursor so that it is placed on given byte.
+ *
+ * @param file_pos
+ */
+void place_cursor_at_byte(long long file_pos)
+{
+    cur_row = screen_row_at_file_pos(file_pos);
+    if (cur_row < 0) {
+        top_row += cur_row;
+        cur_row = 0;
+    } else if (cur_row > GetMaxY-1) {
+        top_row += cur_row - (GetMaxY-1);
+        cur_row = GetMaxY-1;
+    }
+    cur_col = screen_col_at_file_pos(file_pos);
+    if (cur_col < 0) {
+        left_col += cur_col;
+        cur_col = 0;
+    } else if (cur_col > GetMaxX-1) {
+        left_col += cur_col - (GetMaxX-1);
+        cur_col = GetMaxX-1;
+    }
 }
 
 void printFileLine(unsigned short row_idx)
@@ -544,6 +572,7 @@ bool initScreen(void)
     keypad(stdscr, TRUE);
 
     top_row = 0;
+    left_col = 0;
     cur_col = 0;
     cur_row = 0;
     editMode = Mode_ArrEdit;
@@ -821,17 +850,7 @@ void cmdSearchString(void)
         if (strcmp(Nam1, NAM2) != 0)
             continue;
         long long file_pos = ftell(ifile) - skip_bytes - strlen(Nam1);
-        top_row = file_pos / num_cols;
-        if (top_row < GetMaxY-1)
-        {
-            cur_row = top_row;
-            top_row = 0;
-        } else
-        {
-            top_row -= GetMaxY-1;
-            cur_row = GetMaxY-1;
-        }
-        cur_col = file_pos % num_cols;
+        place_cursor_at_byte(file_pos);
         return;
     }
 }
@@ -853,28 +872,22 @@ void executeCommand(int cmd, int ch)
         redrawFlags |= Draw_CntntAll|Draw_Header|Draw_Footer;
         break;
     case UCmd_ColsWiden:
-        redrawFlags |= Draw_CntntAll|Draw_Header;
-        IVal = file_pos_at_screen_pos(cur_row, cur_col);
-        num_cols++;
-        // Try to move cursor so that it stays on the same byte
-        if (cur_col > top_row + cur_row)
-            cur_col -= cur_row + top_row;
-        else
         {
-            cur_row = IVal / num_cols - top_row;
-            cur_col = IVal % num_cols;
-            while (cur_row < 0)
-            {
-                top_row--;
-                cur_row++;
-            }
+            redrawFlags |= Draw_CntntAll|Draw_Header;
+            long long file_pos;
+            file_pos = file_pos_at_screen_pos(cur_row, cur_col);
+            num_cols++;
+            place_cursor_at_byte(file_pos);
         }
         break;
     case UCmd_ColsShrink:
         if (num_cols > 1)
         {
             redrawFlags |= Draw_CntntAll|Draw_Header;
+            long long file_pos;
+            file_pos = file_pos_at_screen_pos(cur_row, cur_col);
             num_cols--;
+            place_cursor_at_byte(file_pos);
         }
         break;
     case UCmd_CopyChar:
@@ -993,7 +1006,7 @@ void executeCommand(int cmd, int ch)
             break;
         }
         noecho();
-        echr = (char) IVal;
+        echr = IVal;
         subMode = SMdAE_Normal;
         if (fseek(ifile, ftell(ifile) - 1, SEEK_SET) == 0)
             fwrite(&echr, 1, 1, ifile);
