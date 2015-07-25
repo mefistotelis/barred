@@ -94,9 +94,16 @@ enum UserCommands {
     UCmd_MoveEnd,
 };
 
+enum HotKeyFlags {
+    HKF_Default    = 0x00,
+    HKF_DrawLoPrio = 0x01,
+    HKF_DrawZrPrio = 0x02,
+};
+
 struct HotKey {
     int keycode;
     int cmd;
+    unsigned short flags;
     char *key_text;
     char *cmd_text;
 };
@@ -128,6 +135,16 @@ int cur_row;
 int top_row;
 /** Amount of columns left to the screen. */
 int left_col;
+
+#define max(a,b) \
+  ({ __typeof__ (a) _a = (a); \
+      __typeof__ (b) _b = (b); \
+    _a > _b ? _a : _b; })
+
+#define min(a,b) \
+  ({ __typeof__ (a) _a = (a); \
+      __typeof__ (b) _b = (b); \
+    _a < _b ? _a : _b; })
 
 #define file_pos_at_screen_pos(scr_row, scr_col) (((long long)top_row + scr_row) * num_cols + skip_bytes + left_col + scr_col)
 #define screen_row_at_file_pos(file_pos) ((((long long)file_pos - skip_bytes) / num_cols) - top_row)
@@ -272,51 +289,69 @@ void print_help(void)
     wprintw(win_ct, "        <Return>           -Podanie nowej warto\305\233ci bajtu.\n");
 }
 
-static void EKRAN(unsigned int chrcode, unsigned short color, int pos_x, int pos_y)
+static void print_content_char(unsigned int chrcode, unsigned short color, int pos_x, int pos_y)
 {
     wsimplcolor(win_ct, color);
     wmove(win_ct, pos_y, pos_x) == -1 ? -1 : waddrawch(win_ct, chrcode);
 }
 
 const struct HotKey hkeys_arredit[] = {
-    {KEY_F(1), UCmd_ModeHelp,     "F1",  "Help"},
-    {KEY_F(2), UCmd_ColsShrink,   "F2",  "Shrink"},
-    {KEY_F(3), UCmd_ColsWiden,    "F3",  "Widen"},
-    {KEY_F(4), UCmd_CopyLine,     "F4",  "CpLine"},
-    {KEY_F(5), UCmd_CopyChar,     "F5",  "CpChar"},
-    {KEY_F(6), UCmd_SkipStartInc, "F6",  "-Byte"},
-    {KEY_F(7), UCmd_SkipStartDec, "F7",  "+Byte"},
-    {KEY_F(8), UCmd_Search,       "F8",  "Search"},
-    {KEY_F(9), UCmd_EnterASCII,"\033\331","ASCII"},
-    {KEY_F(10),UCmd_Quit,         "F10", "Exit"},
+    {KEY_F(1), UCmd_ModeHelp,       HKF_Default, "F1",  "Help"},
+    {KEY_F(2), UCmd_ColsShrink,     HKF_Default, "F2",  "Shrink"},
+    {KEY_F(3), UCmd_ColsWiden,      HKF_Default, "F3",  "Widen"},
+    {KEY_F(4), UCmd_CopyLine,       HKF_Default, "F4",  "CpLine"},
+    {KEY_F(5), UCmd_CopyChar,       HKF_Default, "F5",  "CpChar"},
+    {KEY_F(6), UCmd_SkipStartInc,   HKF_Default, "F6",  "-Byte"},
+    {KEY_F(7), UCmd_SkipStartDec,   HKF_Default, "F7",  "+Byte"},
+    {KEY_F(8), UCmd_Search,         HKF_Default, "F8",  "Search"},
+    {KEY_USR_ENTER,UCmd_EnterASCII, HKF_Default, "\033\331","ASCII"},
+    {KEY_ENTER,UCmd_EnterASCII,  HKF_DrawZrPrio, "\033\331","ASCII"},
+    {KEY_UP,   UCmd_MoveUp,      HKF_DrawZrPrio, "","RowUp"},
+    {KEY_DOWN, UCmd_MoveDown,    HKF_DrawZrPrio, "","RowDown"},
+    {KEY_LEFT, UCmd_MoveLeft,    HKF_DrawZrPrio, "","ColLeft"},
+    {KEY_RIGHT,UCmd_MoveRight,   HKF_DrawZrPrio, "","ColRight"},
+    {KEY_PPAGE,UCmd_MovePgUp,    HKF_DrawZrPrio, "PgUp","PgUp"},
+    {KEY_NPAGE,UCmd_MovePgDn,    HKF_DrawZrPrio, "PgDn","PgDn"},
+    {KEY_HOME, UCmd_MoveHome,    HKF_DrawZrPrio, "Home","Start"},
+    {KEY_END,  UCmd_MoveEnd,     HKF_DrawZrPrio, "End","End"},
+    {KEY_F(10),UCmd_Quit,           HKF_Default, "F10", "Exit"},
+    {KEY_USR_ESCAPE,UCmd_Quit,   HKF_DrawZrPrio, "Esc", "Exit"},
 };
 
 const struct HotKey hkeys_help[] = {
-    {KEY_F(1), UCmd_ModeArrEd,    "F1",  "Back"},
-    {KEY_USR_ESCAPE,   UCmd_ModeArrEd,    "Esc", "Back"},
-    {KEY_F(10),UCmd_Quit,         "F10", "Exit"},
+    {KEY_F(1), UCmd_ModeArrEd,    HKF_Default, "F1",  "Back"},
+    {KEY_USR_ESCAPE,UCmd_ModeArrEd,HKF_Default,"Esc", "Back"},
+    {KEY_F(10),UCmd_Quit,         HKF_Default, "F10", "Exit"},
 };
 
 void draw_footer_hotkeys(const struct HotKey * hkeys, int num_hotkeys)
 {
-    int ikey;
     //wsimplclear(win_ft, Colr_Default); -- no need to clear - we will fill the whole area when drawing
     wmove(win_ft, 0, 0);
-    // Compute excess space beyond the minibal size of the bar
+    // Compute excess space beyond the minimal size of the bar
+    int i, ikey;
     int excess_space = GetMaxX;
-    for (ikey = 0; ikey < num_hotkeys; ikey++)
+    ikey = 0;
+    for (i = 0; i < num_hotkeys; i++)
     {
         const struct HotKey *hk;
-        hk = &hkeys[ikey];
+        hk = &hkeys[i];
+        if ((hk->flags & HKF_DrawZrPrio) != 0)
+            continue;
         excess_space -= strlen(hk->key_text);
         excess_space -= strlen(hk->cmd_text);
+        ikey++;
     }
+    int num_drawn_hotkeys = ikey;
     if (excess_space < 0)
         excess_space = 0;
-    for (ikey = 0; ikey < num_hotkeys; ikey++)
+    ikey = 0;
+    for (i = 0; i < num_hotkeys; i++)
     {
         const struct HotKey *hk;
-        hk = &hkeys[ikey];
+        hk = &hkeys[i];
+        if ((hk->flags & HKF_DrawZrPrio) != 0)
+            continue;
         wsimplcolor(win_ft, Colr_Input);
         if ((hk->key_text[0] > 0) && (hk->key_text[0] < 32)) {
             waddrawch(win_ft, hk->key_text[0]);
@@ -325,7 +360,8 @@ void draw_footer_hotkeys(const struct HotKey * hkeys, int num_hotkeys)
             wprintw(win_ft, "%s",hk->key_text);
         }
         wsimplcolor(win_ft, Colr_HotKey);
-        wprintw(win_ft, "%s%*c\n", hk->cmd_text, excess_space*(ikey+1)/num_hotkeys - excess_space*(ikey)/num_hotkeys, ' ');
+        wprintw(win_ft, "%s%*c\n", hk->cmd_text, excess_space*(ikey+1)/num_drawn_hotkeys - excess_space*(ikey)/num_drawn_hotkeys, ' ');
+        ikey++;
     }
 }
 
@@ -399,7 +435,7 @@ void place_cursor_at_byte(long long file_pos)
     }
 }
 
-void printFileLine(unsigned short row_idx)
+void print_arred_line(unsigned short row_idx)
 {
     //wsimplcolor(win_ct, Colr_WorkArea);
     if (fseek(ifile, file_pos_at_screen_pos(row_idx, 0), SEEK_SET) != 0)
@@ -423,11 +459,11 @@ void printFileLine(unsigned short row_idx)
             outchr = ' ';
             colr = Colr_Input;
         }
-        EKRAN(outchr, colr, col_idx, row_idx);
+        print_content_char(outchr, colr, col_idx, row_idx);
     }
 }
 
-void parseCmdOptions(int argc, char *argv[])
+void parse_cmd_options(int argc, char *argv[])
 {
     int c;
     int i;
@@ -545,7 +581,7 @@ void parseCmdOptions(int argc, char *argv[])
 int dummyripinit(WINDOW *win, int columns)
 { return 0; }
 
-bool initScreen(void)
+bool init_screen(void)
 {
     ripoffline(1,dummyripinit);
     ripoffline(-1,dummyripinit);
@@ -583,7 +619,7 @@ bool initScreen(void)
     return TRUE;
 }
 
-static bool initInputFile(void)
+static bool init_input_file(void)
 {
     wmove(win_ct, 0, 0);
     wprintw(win_ct, "%s initial test . . .\n",INTERNAL_NAME);
@@ -602,10 +638,14 @@ static bool initInputFile(void)
     return TRUE;
 }
 
-void drawScreen(void)
+void draw_screen(void)
 {
-    if ((redrawFlags != Draw_Nothing) & (!kbhit()))
+    if (redrawFlags != Draw_Nothing)
     {
+        if (kbhit()) {
+            redrawFlags |= Draw_CntntAll;
+            return;
+        }
         // If redrawing all, make sure other redraw flags are not set
         if ((redrawFlags & Draw_CntntAll) != 0) {
             redrawFlags &= ~(Draw_CntntCur|Draw_CntntBlw|Draw_CntntMvDn|Draw_CntntMvUp);
@@ -619,7 +659,7 @@ void drawScreen(void)
                 wmove(win_ct, 0, 0);
                 winsdelln(win_ct, 1);
                 wmove(win_ct, 0, 0);
-                printFileLine(0);
+                print_arred_line(0);
             }
             if ((redrawFlags & Draw_CntntMvUp) != 0)
             {
@@ -627,15 +667,15 @@ void drawScreen(void)
                 wmove(win_ct, 0, 0);
                 winsdelln(win_ct, -1);
                 wmove(win_ct, GetMaxY-1, 0);
-                printFileLine(GetMaxY-1);
+                print_arred_line(GetMaxY-1);
             }
             if ((redrawFlags & Draw_CntntCur) != 0) {
-                printFileLine(cur_row);
+                print_arred_line(cur_row);
             }
             if ((redrawFlags & Draw_CntntBlw) != 0) {
                 int irow;
                 for (irow = cur_row; irow < GetMaxY; irow++)
-                    printFileLine(irow);
+                    print_arred_line(irow);
             }
             if ((redrawFlags & Draw_Header) != 0) {
                 draw_header_statusbar();
@@ -643,7 +683,7 @@ void drawScreen(void)
             if ((redrawFlags & Draw_CntntAll) != 0) {
                 int irow;
                 for (irow = 0; irow < GetMaxY; irow++)
-                    printFileLine(irow);
+                    print_arred_line(irow);
             }
             if ((redrawFlags & Draw_Footer) != 0) {
                 draw_footer_hotkeys(hkeys_arredit, sizeof(hkeys_arredit)/sizeof(struct HotKey));
@@ -713,7 +753,7 @@ void shutdown(void)
     printf("                by Tomasz Lis 1997-2015\n");
 }
 
-int keyCommand(int key)
+int key_command(int key)
 {
     // Recognize hotkeys from array data.
     const struct HotKey * hkeys;
@@ -793,7 +833,7 @@ int keyCommand(int key)
     return UCmd_None;
 }
 
-void cmdSearchString(void)
+void cmd_search_string(void)
 {
     char X;
     int startx, starty;
@@ -850,12 +890,12 @@ void cmdSearchString(void)
         if (strcmp(Nam1, NAM2) != 0)
             continue;
         long long file_pos = ftell(ifile) - skip_bytes - strlen(Nam1);
-        place_cursor_at_byte(file_pos);
+        place_cursor_at_byte(max(file_pos,skip_bytes));
         return;
     }
 }
 
-void executeCommand(int cmd, int ch)
+void execute_command(int cmd, int ch)
 {
     switch (cmd)
     {
@@ -877,7 +917,7 @@ void executeCommand(int cmd, int ch)
             long long file_pos;
             file_pos = file_pos_at_screen_pos(cur_row, cur_col);
             num_cols++;
-            place_cursor_at_byte(file_pos);
+            place_cursor_at_byte(max(file_pos,skip_bytes));
         }
         break;
     case UCmd_ColsShrink:
@@ -887,7 +927,7 @@ void executeCommand(int cmd, int ch)
             long long file_pos;
             file_pos = file_pos_at_screen_pos(cur_row, cur_col);
             num_cols--;
-            place_cursor_at_byte(file_pos);
+            place_cursor_at_byte(max(file_pos,skip_bytes));
         }
         break;
     case UCmd_CopyChar:
@@ -930,42 +970,23 @@ void executeCommand(int cmd, int ch)
         }
         break;
     case UCmd_SkipStartInc:
-        if (skip_bytes < maxpos(ifile))
+        if (skip_bytes < maxpos(ifile)-1)
         {
             redrawFlags |= Draw_CntntAll;
+            long long file_pos;
+            file_pos = file_pos_at_screen_pos(cur_row, cur_col);
             skip_bytes++;
-            if (cur_col > 0) {
-                cur_col--;
-            } else
-            if (cur_row > 0)
-            {
-                cur_row--;
-                cur_col = num_cols-1;
-            } else
-            if (top_row > 0)
-            {
-                top_row--;
-                cur_col = num_cols-1;
-            }
+            place_cursor_at_byte(max(file_pos,skip_bytes));
         }
         break;
     case UCmd_SkipStartDec:
         if (skip_bytes > 0)
         {
             redrawFlags |= Draw_CntntAll;
+            long long file_pos;
+            file_pos = file_pos_at_screen_pos(cur_row, cur_col);
             skip_bytes--;
-            if (cur_col < num_cols) {
-                cur_col++;
-            } else
-            if (cur_row < GetMaxY-1) {
-                cur_row++;
-                cur_col = 0;
-            } else
-            if (file_pos_at_screen_pos(1,0) < maxpos(ifile)) {
-                redrawFlags |= Draw_CntntAll;
-                top_row++;
-                cur_col = 0;
-            }
+            place_cursor_at_byte(max(file_pos,skip_bytes));
         }
         break;
     case UCmd_Search:
@@ -976,7 +997,7 @@ void executeCommand(int cmd, int ch)
         wsimplcolor(win_ft, Colr_HotKey);
         wprintw(win_ft, "Search for string:");
         wsimplcolor(win_ft, Colr_Input);
-        cmdSearchString();
+        cmd_search_string();
         subMode = SMdAE_Normal;
         break;
     case UCmd_EnterASCII: {
@@ -1095,19 +1116,19 @@ void executeCommand(int cmd, int ch)
 int main(int argc, char *argv[])
 {
     ifile = NULL;
-    parseCmdOptions(argc, argv);
-    initScreen();
-    if (!initInputFile()) {
+    parse_cmd_options(argc, argv);
+    init_screen();
+    if (!init_input_file()) {
         shutdown();
         abort();
     }
     int ch,cmd;
     do
     {
-        drawScreen();
+        draw_screen();
         ch = getch();
-        cmd = keyCommand(ch);
-        executeCommand(cmd, ch);
+        cmd = key_command(ch);
+        execute_command(cmd, ch);
     }
     while (cmd != UCmd_Quit);
     shutdown();
