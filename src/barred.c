@@ -280,13 +280,12 @@ void print_help(void)
     wprintw(win_ct, " <up arrow>/<down arrow>    -Move cursor up/down\n");
     wprintw(win_ct, " <left arrow>/<right arrow> -Move cursor left/right\n");
     wprintw(win_ct, " <home>/<end>               -Move to beginning/end of file\n");
-    wprintw(win_ct, " <pagr up>/<page down>      -Przesuwa widok o stron\304\231 wy\305\274ej/ni\305\274ej\n");
-    wprintw(win_ct, "  <F1>                      -Wy\305\233wietla ten ekran pomocy\n");
-    wprintw(win_ct, "  <F2>/<F3>                 -Zmiejszenie/zwi\304\231kszenie ilo\305\233ci\n");
-    wprintw(win_ct, "                             znak\303\263w na jedn\304\205 lini\304\231\n");
-    wprintw(win_ct, "  <F4>/<F5>                 -Kopiowanie linii/znaku\n");
-    wprintw(win_ct, "  <F6>/<F7>                 -Zwi\304\231ksza/zmiejsza wielko\305\233\304\207 parametru [number]\n");
-    wprintw(win_ct, "        <Return>           -Podanie nowej warto\305\233ci bajtu.\n");
+    wprintw(win_ct, " <pagr up>/<page down>      -Move the view one page higher/lower\n");
+    wprintw(win_ct, "  <F1>                      -Shows this help screen\n");
+    wprintw(win_ct, "  <F2>/<F3>                 -Decrease/increase amount of chars per line\n");
+    wprintw(win_ct, "  <F4>/<F5>                 -Copy line/character to below\n");
+    wprintw(win_ct, "  <F6>/<F7>                 -Increase/decrease value of the [number] parameter\n");
+    wprintw(win_ct, "    <Return>                -Enter integer ASCII code to replace the char.\n");
 }
 
 static void print_content_char(unsigned int chrcode, unsigned short color, int pos_x, int pos_y)

@@ -22,7 +22,7 @@ ifneq (,$(findstring MINGW,$(OS)))
 BARRED_RES  = obj/barred_stdres.res
 EXEEXT = .exe
 else
-TD8XBMP_RES  = 
+BARRED_RES  = 
 EXEEXT =
 endif
 CPP  = g++
@@ -59,7 +59,7 @@ RM = rm -f
 all: all-before $(BARRED_BIN) all-after
 
 clean: clean-custom
-	-${RM} $(BARRED_OBJS) $(BARRED_BIN) $(BARRED_LIBS)
+	-${RM} $(BARRED_OBJS) $(BARRED_BIN) $(BARRED_RES) $(BARRED_LIBS)
 	-@echo ' '
 
 $(BARRED_BIN): $(BARRED_OBJS) $(BARRED_LIBS)
