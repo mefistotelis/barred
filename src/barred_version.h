@@ -20,10 +20,10 @@
 #define BARRED_VERSION_H
 
 /* VERSION DEFINITIONS */
-#define VER_STRING	"2.0.2.0"
+#define VER_STRING	"2.0.3.0"
 #define VER_MAJOR	2
 #define VER_MINOR	0
-#define VER_RELEASE	2
+#define VER_RELEASE	3
 #define VER_BUILD	0
 #define COMPANY_NAME	"Open Source"
 #define FILE_VERSION	VER_STRING
